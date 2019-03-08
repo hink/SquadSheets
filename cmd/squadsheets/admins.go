@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"path/filepath"
+	"time"
 
 	"github.com/hink/SquadAdminSheets/pkg/models"
 
@@ -84,7 +85,9 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string) error {
 	}
 
 	// write file
+	timeGenerated := time.Now().Format("Mon Jan _2 15:04:05 2006")
 	fileData := "// THIS FILE SHOULD NOT BE MODIFIED MANUALLY. IT IS MANAGED VIA A SCHEDULED TASK AND GOOGLE SHEETS" + NEWLINE
+	fileData = "// last generated " + timeGenerated
 
 	// Admin roles
 	fileData += NEWLINE + NEWLINE + "// ADMIN ROLES --------------" + NEWLINE
