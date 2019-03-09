@@ -3,17 +3,21 @@ package main
 import (
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"path/filepath"
 	"time"
 
-	"github.com/hink/SquadAdminSheets/pkg/models"
+	"github.com/apex/log"
+
+	"github.com/hink/SquadSheets/pkg/models"
 
 	"google.golang.org/api/sheets/v4"
 )
 
 const NEWLINE = "\r\n"
+const ASCWhitelistURL = "https://docs.google.com/document/d/1tMzGySrFdXIKW1JG9sKTJiEvsEGDM0oT4tzuxojXWpc/export?format=txt"
 
-func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string) error {
+func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCWhitelist bool) error {
 	adminRoles := make(map[string]models.AdminRole)
 	adminsVkng := []models.User{}
 	adminsOther := []models.User{}
@@ -98,19 +102,56 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string) error {
 	// VKNG Admins
 	fileData += NEWLINE + NEWLINE + "// VKNG ADMINS --------------" + NEWLINE
 	for _, xVkngAdmin := range adminsVkng {
-		fileData += fmt.Sprintf("Admin=%s:%s //%s - %s%s", xVkngAdmin.Steam64, xVkngAdmin.Role, xVkngAdmin.Name, xVkngAdmin.Notes, NEWLINE)
+		if xVkngAdmin.Steam64 == "" {
+			continue // we dont have their 64 anyway
+		}
+		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xVkngAdmin.Steam64, xVkngAdmin.Role, xVkngAdmin.Name)
+		if xVkngAdmin.Notes != "" {
+			fileData += fmt.Sprintf(" - %s", xVkngAdmin.Notes)
+		}
+		fileData += NEWLINE
 	}
 
 	// Community Admins
 	fileData += NEWLINE + NEWLINE + "// COMMUNITY ADMINS --------------" + NEWLINE
 	for _, xOtherAdmin := range adminsOther {
-		fileData += fmt.Sprintf("Admin=%s:%s //%s - %s%s", xOtherAdmin.Steam64, xOtherAdmin.Role, xOtherAdmin.Name, xOtherAdmin.Notes, NEWLINE)
+		if xOtherAdmin.Steam64 == "" {
+			continue // we dont have their 64 anyway
+		}
+		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xOtherAdmin.Steam64, xOtherAdmin.Role, xOtherAdmin.Name)
+		if xOtherAdmin.Notes != "" {
+			fileData += fmt.Sprintf(" - %s", xOtherAdmin.Notes)
+		}
+		fileData += NEWLINE
 	}
 
 	// Whitelist
 	fileData += NEWLINE + NEWLINE + "// WHITELIST --------------" + NEWLINE
 	for _, xWhitelist := range adminsOther {
-		fileData += fmt.Sprintf("Admin=%s:%s //%s - %s%s", xWhitelist.Steam64, xWhitelist.Role, xWhitelist.Name, xWhitelist.Notes, NEWLINE)
+		if xWhitelist.Steam64 == "" {
+			continue // we dont have their 64 anyway
+		}
+		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xWhitelist.Steam64, xWhitelist.Role, xWhitelist.Name)
+		if xWhitelist.Notes != "" {
+			fileData += fmt.Sprintf(" - %s", xWhitelist.Notes)
+		}
+		fileData += NEWLINE
+	}
+
+	// ASC
+	if includeASCWhitelist {
+		response, err := http.Get(ASCWhitelistURL)
+		if err != nil {
+			log.Errorf("Error downloading ASC Whitelist: %s", err.Error())
+		} else {
+			ascData, err := ioutil.ReadAll(response.Body)
+			if err != nil {
+				log.Errorf("Error reading ASC Whitelist: %s", err.Error())
+			} else {
+				fileData += NEWLINE + NEWLINE + string(ascData)
+			}
+		}
+		defer response.Body.Close()
 	}
 
 	// write file
@@ -131,6 +172,10 @@ func rowToAdminRole(row []interface{}) models.AdminRole {
 }
 
 func rowToUser(row []interface{}) models.User {
+	// true up weird workaround
+	if len(row) < 4 {
+		row = append(row, "")
+	}
 	return models.User{
 		Name:    row[0].(string),
 		Steam64: row[1].(string),

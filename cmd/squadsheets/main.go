@@ -9,7 +9,7 @@ import (
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/apex/log/handlers/text"
-	"github.com/hink/SquadAdminSheets/internal/pkg/config"
+	"github.com/hink/SquadSheets/internal/pkg/config"
 
 	"github.com/apex/log"
 	"github.com/urfave/cli"
@@ -21,6 +21,7 @@ type CLIOpts struct {
 	LogPath        string
 	Verbose        bool
 	SquadConfigDir string
+	ASCWhitelist   bool
 }
 
 // SheetProps allows quick reference to sheet properties
@@ -114,7 +115,7 @@ func main() {
 			log.WithField("sheet", "NIDS").Fatal("could not find sheet")
 		}
 
-		return WriteAdminsFile(sheetsSrv, cfg.Sheets.SheetID, opts.SquadConfigDir)
+		return WriteAdminsFile(sheetsSrv, cfg.Sheets.SheetID, opts.SquadConfigDir, opts.ASCWhitelist)
 	}
 
 	app.Run(os.Args)
@@ -143,6 +144,10 @@ func initApp() *cli.App {
 			Name:  "log, l",
 			Usage: "log file",
 		},
+		cli.BoolFlag{
+			Name:  "whitelist, w",
+			Usage: "ASC Whitelist",
+		},
 	}
 	return app
 }
@@ -158,5 +163,6 @@ func validateArgs(c *cli.Context) (*CLIOpts, error) {
 		SquadConfigDir: c.String("configdir"),
 		LogPath:        c.String("log"),
 		Verbose:        c.Bool("verbose"),
+		ASCWhitelist:   c.Bool("whitelist"),
 	}, nil
 }
