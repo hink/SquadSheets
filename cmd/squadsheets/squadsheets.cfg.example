@@ -1,6 +1,6 @@
 [google_sheets]
 sheetID = "<sheet_id>"
-secretJSONPath = "client_secret.json"
+secretJSONPath = "C:\\squad\\squadsheets\\client_secret.json"
 rolesSheet = "sheet_name_for_roles"
 adminSheets = [
 	"admin_sheet_name1",
