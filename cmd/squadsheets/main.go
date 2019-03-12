@@ -2,9 +2,7 @@ package main
 
 import (
 	"errors"
-	"fmt"
 	"os"
-	"strings"
 
 	"google.golang.org/api/sheets/v4"
 
@@ -22,14 +20,6 @@ type CLIOpts struct {
 	Verbose        bool
 	SquadConfigDir string
 	ASCWhitelist   bool
-}
-
-// SheetProps allows quick reference to sheet properties
-type SheetProps struct {
-	AdminRoles *sheets.SheetProperties
-	AdminVkng  *sheets.SheetProperties
-	AdminOther *sheets.SheetProperties
-	Whitelist  *sheets.SheetProperties
 }
 
 var cfg *config.Config
@@ -70,7 +60,6 @@ func main() {
 			log.Fatal(err.Error())
 		}
 
-		fmt.Println("xxx", opts.ConfigPath)
 		// Initialize Sheets client
 		log.Info("Initializing Google Sheets client")
 		sheetsSrv, err := getSheetsService(cfg.Sheets.SecretJSONPath)
@@ -79,7 +68,7 @@ func main() {
 		}
 
 		// Get sheet properties
-		sheetProps := new(SheetProps)
+		sheetProps := make(map[string]*sheets.SheetProperties)
 		log.WithField("sheetid", cfg.Sheets.SheetID).Info("getting Google sheet properties")
 		props, err := getSheetProperties(sheetsSrv, cfg.Sheets.SheetID)
 		if err != nil {
@@ -88,33 +77,48 @@ func main() {
 				"error":   err.Error(),
 			}).Fatal("failed to get Google sheet properties")
 		}
+
 		for _, v := range props {
-			switch strings.ToLower(v.Properties.Title) {
-			case "admin_roles":
-				sheetProps.AdminRoles = v.Properties
-			case "admin_vkng":
-				sheetProps.AdminVkng = v.Properties
-			case "admin_valhalla":
-				sheetProps.AdminOther = v.Properties
-			case "whitelist":
-				sheetProps.Whitelist = v.Properties
-			default:
-				// do nothing
+			// roles
+			if v.Properties.Title == cfg.Sheets.SheetAdminRoles {
+				sheetProps[cfg.Sheets.SheetAdminRoles] = v.Properties
+				continue
+			}
+			// whitelist
+			for _, s := range cfg.Sheets.SheetsWhitelist {
+				if v.Properties.Title == s {
+					sheetProps[s] = v.Properties
+					continue
+				}
+			}
+			// Admins
+			for _, s := range cfg.Sheets.SheetsAdmin {
+				if v.Properties.Title == s {
+					sheetProps[s] = v.Properties
+					continue
+				}
 			}
 		}
-		if sheetProps.AdminRoles == nil {
-			log.WithField("sheet", "Customers").Fatal("could not find sheet")
+
+		// Double check for props
+		// roles
+		if sheetProps[cfg.Sheets.SheetAdminRoles] == nil {
+			log.WithField("sheet", cfg.Sheets.SheetAdminRoles).Fatal("could not find sheet")
 		}
-		if sheetProps.AdminVkng == nil {
-			log.WithField("sheet", "DDOS").Fatal("could not find sheet")
+		// Admins
+		for _, s := range cfg.Sheets.SheetsAdmin {
+			if sheetProps[s] == nil {
+				log.WithField("sheet", s).Fatal("could not find sheet")
+			}
 		}
-		if sheetProps.AdminOther == nil {
-			log.WithField("sheet", "IPRM").Fatal("could not find sheet")
-		}
-		if sheetProps.Whitelist == nil {
-			log.WithField("sheet", "NIDS").Fatal("could not find sheet")
+		// whitelist
+		for _, s := range cfg.Sheets.SheetsWhitelist {
+			if sheetProps[s] == nil {
+				log.WithField("sheet", s).Fatal("could not find sheet")
+			}
 		}
 
+		log.Info("Retrieving data and writing admins file")
 		return WriteAdminsFile(sheetsSrv, cfg.Sheets.SheetID, opts.SquadConfigDir, opts.ASCWhitelist)
 	}
 

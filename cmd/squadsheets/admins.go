@@ -19,19 +19,17 @@ const ASCWhitelistURL = "https://docs.google.com/document/d/1tMzGySrFdXIKW1JG9sK
 
 func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCWhitelist bool) error {
 	adminRoles := make(map[string]models.AdminRole)
-	adminsVkng := []models.User{}
-	adminsOther := []models.User{}
+	admins := []models.User{}
 	whitelist := []models.User{}
 
 	// get admin roles
-	dataRange := "admin_roles!A2:B"
+	dataRange := fmt.Sprintf("%s!A2:B", cfg.Sheets.SheetAdminRoles)
 
 	resp, err := srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
 	if err != nil {
-		err = fmt.Errorf("Unable to retrieve data from admin roles sheet. %v", err)
+		err = fmt.Errorf("unable to retrieve data from admin roles sheet %v", err)
 		return err
 	}
-
 	if len(resp.Values) > 0 {
 		for _, row := range resp.Values {
 			r := rowToAdminRole(row)
@@ -39,52 +37,56 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCW
 		}
 	}
 
-	// get vkng admins
-	dataRange = "admin_vkng!A2:D"
-
-	resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
-	if err != nil {
-		err = fmt.Errorf("Unable to retrieve data from admin vkng sheet. %v", err)
-		return err
-	}
-
-	if len(resp.Values) > 0 {
-		for _, row := range resp.Values {
-			u := rowToUser(row)
-			adminsVkng = append(adminsVkng, u)
+	// check for whitelist role and add it if necessary
+	hasAdminRole := false
+	for role, _ := range adminRoles {
+		if role == "Whitelist" {
+			hasAdminRole = true
+			break
 		}
 	}
-
-	// get other admins
-	dataRange = "admin_valhalla!A2:D"
-
-	resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
-	if err != nil {
-		err = fmt.Errorf("Unable to retrieve data from admin valhalla sheet. %v", err)
-		return err
+	if !hasAdminRole {
+		r := models.AdminRole{
+			Name:  "Whitelist",
+			Value: "reserve",
+		}
+		adminRoles["Whitelist"] = r
 	}
 
-	if len(resp.Values) > 0 {
-		for _, row := range resp.Values {
-			u := rowToUser(row)
-			adminsOther = append(adminsOther, u)
+	// get admins
+	for _, s := range cfg.Sheets.SheetsAdmin {
+		dataRange = fmt.Sprintf("%s!A2:D", s)
+
+		resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
+		if err != nil {
+			err = fmt.Errorf("Unable to retrieve data from admin %s sheet. %v", s, err)
+			return err
+		}
+
+		if len(resp.Values) > 0 {
+			for _, row := range resp.Values {
+				u := rowToUser(row)
+				admins = append(admins, u)
+			}
 		}
 	}
 
 	// get whitelist
-	dataRange = "whitelist!A2:D"
+	for _, s := range cfg.Sheets.SheetsWhitelist {
+		dataRange = fmt.Sprintf("%s!A2:C", s)
 
-	resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
-	if err != nil {
-		err = fmt.Errorf("Unable to retrieve data from whitelist sheet. %v", err)
-		return err
-	}
+		resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
+		if err != nil {
+			err = fmt.Errorf("Unable to retrieve data from whitelist %s sheet. %v", s, err)
+			return err
+		}
 
-	if len(resp.Values) > 0 {
-		for _, row := range resp.Values {
-			u := rowToUser(row)
-			u.Role = adminRoles["Whitelist"].Name
-			whitelist = append(whitelist, u)
+		if len(resp.Values) > 0 {
+			for _, row := range resp.Values {
+				u := rowToWhitelistUser(row)
+				u.Role = adminRoles["Whitelist"].Name
+				whitelist = append(whitelist, u)
+			}
 		}
 	}
 
@@ -100,40 +102,27 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCW
 	}
 
 	// VKNG Admins
-	fileData += NEWLINE + NEWLINE + "// VKNG ADMINS --------------" + NEWLINE
-	for _, xVkngAdmin := range adminsVkng {
-		if xVkngAdmin.Steam64 == "" {
+	fileData += NEWLINE + NEWLINE + "// ADMINS --------------" + NEWLINE
+	for _, admin := range admins {
+		if admin.Steam64 == "" {
 			continue // we dont have their 64 anyway
 		}
-		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xVkngAdmin.Steam64, xVkngAdmin.Role, xVkngAdmin.Name)
-		if xVkngAdmin.Notes != "" {
-			fileData += fmt.Sprintf(" - %s", xVkngAdmin.Notes)
-		}
-		fileData += NEWLINE
-	}
-
-	// Community Admins
-	fileData += NEWLINE + NEWLINE + "// COMMUNITY ADMINS --------------" + NEWLINE
-	for _, xOtherAdmin := range adminsOther {
-		if xOtherAdmin.Steam64 == "" {
-			continue // we dont have their 64 anyway
-		}
-		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xOtherAdmin.Steam64, xOtherAdmin.Role, xOtherAdmin.Name)
-		if xOtherAdmin.Notes != "" {
-			fileData += fmt.Sprintf(" - %s", xOtherAdmin.Notes)
+		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", admin.Steam64, admin.Role, admin.Name)
+		if admin.Notes != "" {
+			fileData += fmt.Sprintf(" - %s", admin.Notes)
 		}
 		fileData += NEWLINE
 	}
 
 	// Whitelist
 	fileData += NEWLINE + NEWLINE + "// WHITELIST --------------" + NEWLINE
-	for _, xWhitelist := range adminsOther {
-		if xWhitelist.Steam64 == "" {
+	for _, user := range whitelist {
+		if user.Steam64 == "" {
 			continue // we dont have their 64 anyway
 		}
-		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", xWhitelist.Steam64, xWhitelist.Role, xWhitelist.Name)
-		if xWhitelist.Notes != "" {
-			fileData += fmt.Sprintf(" - %s", xWhitelist.Notes)
+		fileData += fmt.Sprintf("Admin=%s:%s\t\t//%s", user.Steam64, user.Role, user.Name)
+		if user.Notes != "" {
+			fileData += fmt.Sprintf(" - %s", user.Notes)
 		}
 		fileData += NEWLINE
 	}
@@ -181,5 +170,17 @@ func rowToUser(row []interface{}) models.User {
 		Steam64: row[1].(string),
 		Role:    row[2].(string),
 		Notes:   row[3].(string),
+	}
+}
+
+func rowToWhitelistUser(row []interface{}) models.User {
+	// true up weird workaround
+	if len(row) < 4 {
+		row = append(row, "")
+	}
+	return models.User{
+		Name:    row[0].(string),
+		Steam64: row[1].(string),
+		Notes:   row[2].(string),
 	}
 }
