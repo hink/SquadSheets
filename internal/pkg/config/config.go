@@ -8,8 +8,11 @@ type Config struct {
 
 // ConfigSheets Google sheets configuration
 type ConfigSheets struct {
-	SheetID        string `toml:"sheetID"`
-	SecretJSONPath string `toml:"secretJSONPath"`
+	SheetID         string   `toml:"sheetID"`
+	SecretJSONPath  string   `toml:"secretJSONPath"`
+	SheetAdminRoles string   `toml:"rolesSheet"`
+	SheetsAdmin     []string `toml:"adminSheets"`
+	SheetsWhitelist []string `toml:"whitelistSheets"`
 }
 
 // Load configuration
