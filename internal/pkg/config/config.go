@@ -3,7 +3,8 @@ package config
 import "github.com/BurntSushi/toml"
 
 type Config struct {
-	Sheets *ConfigSheets `toml:"google_sheets"`
+	Sheets    []*ConfigSheets  `toml:"google_sheets"`
+	OtherDocs *ConfigOtherDocs `toml:"other_docs"`
 }
 
 // ConfigSheets Google sheets configuration
@@ -13,6 +14,11 @@ type ConfigSheets struct {
 	SheetAdminRoles string   `toml:"rolesSheet"`
 	SheetsAdmin     []string `toml:"adminSheets"`
 	SheetsWhitelist []string `toml:"whitelistSheets"`
+}
+
+// ConfigOtherDocs struct
+type ConfigOtherDocs struct {
+	Docs []string `toml:"otherDocs"`
 }
 
 // Load configuration

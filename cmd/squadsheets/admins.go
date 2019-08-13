@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"
 	"time"
+
+	"github.com/hink/SquadSheets/internal/pkg/config"
 
 	"github.com/apex/log"
 
@@ -17,18 +20,18 @@ import (
 const NEWLINE = "\r\n"
 const ASCWhitelistURL = "https://docs.google.com/document/d/1tMzGySrFdXIKW1JG9sKTJiEvsEGDM0oT4tzuxojXWpc/export?format=txt"
 
-func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCWhitelist bool) error {
+func getFileLines(srv *sheets.Service, sh *config.ConfigSheets) (map[string]models.AdminRole, []models.User, []models.User, error) {
 	adminRoles := make(map[string]models.AdminRole)
 	admins := []models.User{}
 	whitelist := []models.User{}
 
 	// get admin roles
-	dataRange := fmt.Sprintf("%s!A2:B", cfg.Sheets.SheetAdminRoles)
+	dataRange := fmt.Sprintf("%s!A2:B", sh.SheetAdminRoles)
 
-	resp, err := srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
+	resp, err := srv.Spreadsheets.Values.Get(sh.SheetID, dataRange).Do()
 	if err != nil {
 		err = fmt.Errorf("unable to retrieve data from admin roles sheet %v", err)
-		return err
+		return nil, nil, nil, err
 	}
 	if len(resp.Values) > 0 {
 		for _, row := range resp.Values {
@@ -54,31 +57,33 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCW
 	}
 
 	// get admins
-	for _, s := range cfg.Sheets.SheetsAdmin {
+	for _, s := range sh.SheetsAdmin {
 		dataRange = fmt.Sprintf("%s!A2:D", s)
 
-		resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
+		resp, err = srv.Spreadsheets.Values.Get(sh.SheetID, dataRange).Do()
 		if err != nil {
 			err = fmt.Errorf("Unable to retrieve data from admin %s sheet. %v", s, err)
-			return err
+			return nil, nil, nil, err
 		}
 
 		if len(resp.Values) > 0 {
 			for _, row := range resp.Values {
 				u := rowToUser(row)
-				admins = append(admins, u)
+				if u != nil {
+					admins = append(admins, *u)
+				}
 			}
 		}
 	}
 
 	// get whitelist
-	for _, s := range cfg.Sheets.SheetsWhitelist {
+	for _, s := range sh.SheetsWhitelist {
 		dataRange = fmt.Sprintf("%s!A2:C", s)
 
-		resp, err = srv.Spreadsheets.Values.Get(sheetID, dataRange).Do()
+		resp, err = srv.Spreadsheets.Values.Get(sh.SheetID, dataRange).Do()
 		if err != nil {
 			err = fmt.Errorf("Unable to retrieve data from whitelist %s sheet. %v", s, err)
-			return err
+			return nil, nil, nil, err
 		}
 
 		if len(resp.Values) > 0 {
@@ -90,6 +95,10 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCW
 		}
 	}
 
+	return adminRoles, admins, whitelist, err
+}
+
+func WriteAdminsFile(adminRoles map[string]models.AdminRole, admins []models.User, whitelist []models.User, configDir string, includeASCWhitelist bool) error {
 	// write file
 	timeGenerated := time.Now().Format("Mon Jan _2 15:04:05 2006")
 	fileData := "// THIS FILE SHOULD NOT BE MODIFIED MANUALLY. IT IS MANAGED VIA A SCHEDULED TASK AND GOOGLE SHEETS" + NEWLINE
@@ -143,9 +152,28 @@ func WriteAdminsFile(srv *sheets.Service, sheetID, configDir string, includeASCW
 		defer response.Body.Close()
 	}
 
+	// get Other Docs
+	for _, doc := range cfg.OtherDocs.Docs {
+		u := fmt.Sprintf("https://docs.google.com/document/d/%v/export?format=txt", doc)
+		response, err := http.Get(u)
+		if err != nil {
+			log.Errorf("Error downloading other doc: %s", err.Error())
+		} else {
+			oDocData, err := ioutil.ReadAll(response.Body)
+			oDocData = bytes.Replace(oDocData, []byte("Group="), []byte("// Group="), -1)
+			if err != nil {
+				log.Errorf("Error downloading other doc: %s", err.Error())
+			} else {
+				fileData += NEWLINE + NEWLINE + string(oDocData)
+			}
+		}
+		defer response.Body.Close()
+	}
+
 	// write file
 	filePath := filepath.Join(configDir, "Admins.cfg")
-	err = ioutil.WriteFile(filePath, []byte(fileData), 0644)
+	fmt.Println(filePath)
+	err := ioutil.WriteFile(filePath, []byte(fileData), 0644)
 	if err != nil {
 		return err
 	}
@@ -160,12 +188,15 @@ func rowToAdminRole(row []interface{}) models.AdminRole {
 	}
 }
 
-func rowToUser(row []interface{}) models.User {
+func rowToUser(row []interface{}) *models.User {
+	if len(row) < 4 {
+		return nil
+	}
 	// true up weird workaround
 	if len(row) < 4 {
 		row = append(row, "")
 	}
-	return models.User{
+	return &models.User{
 		Name:    row[0].(string),
 		Steam64: row[1].(string),
 		Role:    row[2].(string),

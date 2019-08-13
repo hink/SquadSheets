@@ -4,6 +4,8 @@ import (
 	"errors"
 	"os"
 
+	"github.com/hink/SquadSheets/pkg/models"
+
 	"google.golang.org/api/sheets/v4"
 
 	"github.com/apex/log/handlers/text"
@@ -60,66 +62,79 @@ func main() {
 			log.Fatal(err.Error())
 		}
 
-		// Initialize Sheets client
-		log.Info("Initializing Google Sheets client")
-		sheetsSrv, err := getSheetsService(cfg.Sheets.SecretJSONPath)
-		if err != nil {
-			log.Fatal(err.Error())
-		}
+		// parse sheets
+		roles := make(map[string]models.AdminRole)
+		admins := []models.User{}
+		whitelist := []models.User{}
+		for _, s := range cfg.Sheets {
+			// Initialize Sheets client
+			log.Info("Initializing Google Sheets client")
+			sheetsSrv, err := getSheetsService(s.SecretJSONPath)
+			if err != nil {
+				log.Fatal(err.Error())
+			}
 
-		// Get sheet properties
-		sheetProps := make(map[string]*sheets.SheetProperties)
-		log.WithField("sheetid", cfg.Sheets.SheetID).Info("getting Google sheet properties")
-		props, err := getSheetProperties(sheetsSrv, cfg.Sheets.SheetID)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"sheetid": cfg.Sheets.SheetID,
-				"error":   err.Error(),
-			}).Fatal("failed to get Google sheet properties")
-		}
+			// Get sheet properties
+			sheetProps := make(map[string]*sheets.SheetProperties)
+			log.WithField("sheetid", s.SheetID).Info("getting Google sheet properties")
+			props, err := getSheetProperties(sheetsSrv, s.SheetID)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"sheetid": s.SheetID,
+					"error":   err.Error(),
+				}).Fatal("failed to get Google sheet properties")
+			}
 
-		for _, v := range props {
+			for _, v := range props {
+				// roles
+				if v.Properties.Title == s.SheetAdminRoles {
+					sheetProps[s.SheetAdminRoles] = v.Properties
+					continue
+				}
+				// whitelist
+				for _, s := range s.SheetsWhitelist {
+					if v.Properties.Title == s {
+						sheetProps[s] = v.Properties
+						continue
+					}
+				}
+				// Admins
+				for _, s := range s.SheetsAdmin {
+					if v.Properties.Title == s {
+						sheetProps[s] = v.Properties
+						continue
+					}
+				}
+			}
+
+			// Double check for props
 			// roles
-			if v.Properties.Title == cfg.Sheets.SheetAdminRoles {
-				sheetProps[cfg.Sheets.SheetAdminRoles] = v.Properties
-				continue
+			if sheetProps[s.SheetAdminRoles] == nil {
+				log.WithField("sheet", s.SheetAdminRoles).Fatal("could not find sheet")
+			}
+
+			// Admins
+			for _, sx := range s.SheetsAdmin {
+				if sheetProps[sx] == nil {
+					log.WithField("sheet", sx).Fatal("could not find sheet")
+				}
 			}
 			// whitelist
-			for _, s := range cfg.Sheets.SheetsWhitelist {
-				if v.Properties.Title == s {
-					sheetProps[s] = v.Properties
-					continue
+			for _, sx := range s.SheetsWhitelist {
+				if sheetProps[sx] == nil {
+					log.WithField("sheet", sx).Fatal("could not find sheet")
 				}
 			}
-			// Admins
-			for _, s := range cfg.Sheets.SheetsAdmin {
-				if v.Properties.Title == s {
-					sheetProps[s] = v.Properties
-					continue
-				}
-			}
-		}
 
-		// Double check for props
-		// roles
-		if sheetProps[cfg.Sheets.SheetAdminRoles] == nil {
-			log.WithField("sheet", cfg.Sheets.SheetAdminRoles).Fatal("could not find sheet")
-		}
-		// Admins
-		for _, s := range cfg.Sheets.SheetsAdmin {
-			if sheetProps[s] == nil {
-				log.WithField("sheet", s).Fatal("could not find sheet")
+			log.Info("Retrieving data and writing admins file")
+			r, a, w, err := getFileLines(sheetsSrv, s)
+			for k, v := range r {
+				roles[k] = v
 			}
+			admins = append(admins, a...)
+			whitelist = append(whitelist, w...)
 		}
-		// whitelist
-		for _, s := range cfg.Sheets.SheetsWhitelist {
-			if sheetProps[s] == nil {
-				log.WithField("sheet", s).Fatal("could not find sheet")
-			}
-		}
-
-		log.Info("Retrieving data and writing admins file")
-		return WriteAdminsFile(sheetsSrv, cfg.Sheets.SheetID, opts.SquadConfigDir, opts.ASCWhitelist)
+		return WriteAdminsFile(roles, admins, whitelist, opts.SquadConfigDir, opts.ASCWhitelist)
 	}
 
 	app.Run(os.Args)

@@ -1,4 +1,4 @@
-[google_sheets]
+[[google_sheets]]
 sheetID = "google_sheet_id"
 secretJSONPath = "C:\\squad\\squadsheets\\client_secret.json"
 rolesSheet = "sheet_name_for_roles"
@@ -8,4 +8,20 @@ adminSheets = [
 ]
 whitelistSheets = [
 	"whitelist_sheet_name1",
+]
+
+[[google_sheets]]
+sheetID = "another_google_sheet_id"
+secretJSONPath = "C:\\squad\\squadsheets\\client_secret.json"
+rolesSheet = "sheet_name_for_roles"
+adminSheets = [
+	"admin_sheet_name1",
+]
+whitelistSheets = [
+	"whitelist_sheet_name1",
+]
+
+[other_docs]
+docIDs = [
+	"google_sheet_id",
 ]
